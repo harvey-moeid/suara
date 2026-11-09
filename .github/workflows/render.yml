@@ -20,7 +20,7 @@ jobs:
       WORKER_URL: ${{ vars.WORKER_URL || 'https://omnivoice-studio.harveymoeid.workers.dev' }}
       JOB_ID: ${{ github.event.client_payload.job_id }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/setup-tts
 
