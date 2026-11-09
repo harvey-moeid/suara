@@ -3,7 +3,7 @@ description: Siapkan Python 3.11, ffmpeg, PyTorch CPU, OmniVoice, dan cache mode
 runs:
   using: composite
   steps:
-    - uses: actions/setup-python@v5
+    - uses: actions/setup-python@v7
       with:
         python-version: '3.11'
         cache: pip
