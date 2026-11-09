@@ -50,14 +50,23 @@ def _digits(s: str) -> str:
 
 
 def _num_words(s: str) -> str:
-    """Baca angka gaya Indonesia: titik = pemisah ribuan, koma = desimal."""
+    """Baca angka gaya Indonesia: titik = pemisah ribuan, koma = desimal.
+
+    Beberapa koma: ribuan gaya Inggris (1,500,000) bila semua kelompok setelah
+    yang pertama 3 digit; selain itu dianggap daftar angka (1,2,3).
+    """
     s = s.strip()
     if s.isdigit() and len(s) > 1 and s.startswith("0"):
         return _digits(s)
     if "," in s:
-        ip, fp = s.split(",", 1)
-        ip = ip.replace(".", "")
-        return terbilang(int(ip or "0")) + " koma " + _digits(fp)
+        parts = s.split(",")
+        if len(parts) == 2:
+            ip, fp = parts
+            ip = ip.replace(".", "")
+            return terbilang(int(ip or "0")) + " koma " + _digits(fp)
+        if re.fullmatch(r"\d{1,3}(?:,\d{3})+", s):
+            return terbilang(int(s.replace(",", "")))
+        return ", ".join(_num_words(p) for p in parts if p)
     if re.fullmatch(r"\d{1,3}(?:\.\d{3})+", s):
         return terbilang(int(s.replace(".", "")))
     if re.fullmatch(r"\d+\.\d{1,2}", s):
@@ -70,7 +79,7 @@ _NUM = r"\d[\d.,]*\d|\d"
 
 _URL = re.compile(r"(?:https?://|www\.)\S+", re.I)
 _EMAIL = re.compile(r"\S+@\S+\.\S+")
-_EMOJI = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF\uFE00-\uFE0F\u200D\u20E3]")
+_EMOJI = re.compile("[\U0001F000-\U0001FAFF☀-➿⬀-⯿︀-️‍⃣]")
 
 _ABBR = {
     "yg": "yang", "dgn": "dengan", "dg": "dengan", "tdk": "tidak", "utk": "untuk", "dlm": "dalam",
@@ -80,6 +89,13 @@ _ABBR = {
     "yth": "yang terhormat", "hlm": "halaman", "tgl": "tanggal", "thn": "tahun", "bln": "bulan",
 }
 _ABBR_RE = re.compile(r"\b(?:" + "|".join(sorted(_ABBR, key=len, reverse=True)) + r")\b", re.I)
+
+# Gelar/singkatan berimbuhan titik yang diikuti kata ("dr. Budi", "tgl. 5"): titiknya bukan akhir kalimat.
+_TITLES = {
+    "dr": "dokter", "prof": "profesor", "ir": "insinyur", "drs": "doktorandus",
+    "bpk": "bapak", "sdr": "saudara", "yth": "yang terhormat", "hlm": "halaman", "tgl": "tanggal",
+}
+_TITLE_RE = re.compile(r"(?i)\b(" + "|".join(sorted(_TITLES, key=len, reverse=True)) + r")\.\s*(?=\w)")
 
 # Singkatan yang dieja per huruf.
 _LETTERS = ["PT", "CV", "RT", "RW", "KTP", "WIB", "WITA", "WIT", "HP", "WA", "TV", "SMS", "ATM", "BPJS",
@@ -103,6 +119,13 @@ _KALI_RE = re.compile(r"(?i)\b(\d+)\s?x\b")
 _LONG1_RE = re.compile(r"\b0\d{7,}\b")
 _LONG2_RE = re.compile(r"\b\d{9,}\b")
 _NUM_RE = re.compile(_NUM)
+# Tanda minus: "-5" yang tidak menempel pada kata/angka ("COVID-19", "10-20", "0812-3456" tidak kena).
+_NEG_RE = re.compile(r"(?<![\w)\]])-(?=\d)")
+
+
+def _cap_like(src: str, out: str) -> str:
+    """Pertahankan huruf kapital awal dari bentuk singkatan pada hasil perluasan."""
+    return out[:1].upper() + out[1:] if src[:1].isupper() else out
 
 
 def clean_text(text: str) -> str:
@@ -114,13 +137,14 @@ def clean_text(text: str) -> str:
     t = t.translate({0x201C: '"', 0x201D: '"', 0x2018: "'", 0x2019: "'", 0x2013: "-", 0x2014: ", "})
     t = re.sub(r"[*_`~^|<>\[\]{}]", " ", t)
     t = re.sub(r"#(\w)", r"\1", t)
-    t = re.sub(r"[ \t\u00a0]+", " ", t)
+    t = re.sub(r"[ \t ]+", " ", t)
     return t
 
 
 def _id_rules(t: str) -> str:
     t = re.sub(r"(?i)\bkm\s*/\s*jam\b", "kilometer per jam", t)
-    t = _ABBR_RE.sub(lambda m: _ABBR[m.group(0).lower()], t)
+    t = _TITLE_RE.sub(lambda m: _cap_like(m.group(1), _TITLES[m.group(1).lower()]) + " ", t)
+    t = _ABBR_RE.sub(lambda m: _cap_like(m.group(0), _ABBR[m.group(0).lower()]), t)
     t = re.sub(r"(?i)\bno\.?\s*(?=\d)", "nomor ", t)
     t = re.sub(r"(?i)\bjln?\.?\s+(?=\w)", "jalan ", t)
     t = _LETTERS_RE.sub(lambda m: " ".join(m.group(0)), t)
@@ -141,6 +165,7 @@ def _id_rules(t: str) -> str:
     t = _TIME_RE.sub(
         lambda m: terbilang(int(m.group(1))) + (f" lewat {terbilang(int(m.group(2)))} menit" if int(m.group(2)) else ""), t
     )
+    t = _NEG_RE.sub(" minus ", t)
 
     def rp(m: re.Match) -> str:
         scale = (m.group(2) or "").strip().lower()
