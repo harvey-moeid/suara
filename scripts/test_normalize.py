@@ -27,12 +27,34 @@ TEXTS = {
     "Telp 081234567890": "nol delapan satu dua",
     "Cek https://contoh.com sekarang": "Cek sekarang.",
     "Halo \U0001F600 dunia": "Halo dunia.",
-    "Suhu 30\u00b0C": "tiga puluh derajat celsius",
+    "Suhu 30°C": "tiga puluh derajat celsius",
     "Rp 5 juta": "lima juta rupiah",
+    # Daftar angka tanpa spasi tidak boleh dibaca sebagai desimal.
+    "Pilih nomor 1,2,3 saja": "satu, dua, tiga",
+    # Ribuan gaya Inggris.
+    "Total 1,500,000 pengguna": "satu juta lima ratus ribu",
+    # Angka negatif.
+    "Suhu -5 derajat": "minus lima",
+    "Suhu -5°C": "minus lima derajat celsius",
+    # Gelar dan singkatan berimbuhan titik tidak memecah kalimat.
+    "Hubungi dr. Budi hari ini": "dokter Budi hari ini",
+    "Bpk. Andi hadir": "Bapak Andi hadir",
+    "Acara tgl. 5 nanti": "tanggal lima nanti",
+    # Kapital awal dipertahankan saat singkatan diperluas.
+    "Yg benar saja": "Yang benar saja",
 }
 for src, frag in TEXTS.items():
     out = normalize_text(src)
     assert frag in out, (src, out, frag)
+
+# Kasus yang tidak boleh kena aturan minus.
+for src in ["Telp 0812-3456-7890", "Jangan lupa COVID-19", "Rentang 10-20 saja"]:
+    assert "minus" not in normalize_text(src), src
+# Tanggal berstrip tetap terbaca sebagai tanggal.
+assert "Agustus" in normalize_text("Tanggal 17-08-2026")
+
+# Gelar tidak boleh membuat potongan terpisah di tengah kalimat.
+assert len(split_chunks(normalize_text("Hubungi dr. Budi hari ini."))) == 1
 
 assert normalize_text("   \n  ") == ""
 assert normalize_text("Satu\nDua") == "Satu. Dua."
