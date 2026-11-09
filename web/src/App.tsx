@@ -3,6 +3,7 @@ import { AuthError, checkAuth, clearPass, fetchAudio, getJob, getMeta, getPass, 
 import type { Job, Meta, Mode, SubmitPayload } from './api';
 import { loadHistory, saveHistory } from './history';
 import type { HistoryItem } from './history';
+import { LOGO_SRC } from './logo';
 
 const LANGS: [string, string][] = [['id', 'Indonesia'], ['jv', 'Jawa'], ['ms', 'Melayu'], ['en', 'Inggris']];
 const STEPS: [number, string][] = [[8, 'Draf (8)'], [16, 'Standar (16)'], [32, 'Terbaik (32)']];
@@ -25,6 +26,20 @@ function fmtDur(sec: number): string {
 
 function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : 'Terjadi kesalahan';
+}
+
+function Logo({ size }: { size: number }) {
+  return (
+    <img
+      src={LOGO_SRC}
+      alt="Logo byga"
+      width={size}
+      height={size}
+      draggable={false}
+      className="shrink-0 select-none drop-shadow-[0_0_12px_rgba(56,189,248,0.45)]"
+      onError={(e) => { e.currentTarget.style.display = 'none'; }}
+    />
+  );
 }
 
 interface RefState {
@@ -53,8 +68,11 @@ function Gate({ onOk }: { onOk: () => void }) {
   };
   return (
     <div className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-4 p-5">
-      <h1 className="text-2xl font-bold">OmniVoice Studio</h1>
-      <p className="text-slate-400">Masukkan passcode untuk memakai aplikasi.</p>
+      <div className="flex flex-col items-center gap-2 text-center">
+        <Logo size={112} />
+        <h1 className="text-2xl font-bold">OmniVoice Studio</h1>
+      </div>
+      <p className="text-center text-slate-400">Masukkan passcode untuk memakai aplikasi.</p>
       <input
         type="password"
         className={field}
@@ -319,9 +337,12 @@ function Studio({ onLogout }: { onLogout: () => void }) {
   return (
     <div className="mx-auto max-w-xl space-y-4 p-4 pb-24">
       <header className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">OmniVoice Studio</h1>
-          <p className="text-sm text-slate-400">Teks ke suara bahasa Indonesia. Dirender di CPU lewat antrean, jadi butuh beberapa menit.</p>
+        <div className="flex items-center gap-3">
+          <Logo size={56} />
+          <div>
+            <h1 className="text-2xl font-bold">OmniVoice Studio</h1>
+            <p className="text-sm text-slate-400">Teks ke suara bahasa Indonesia. Dirender di CPU lewat antrean, jadi butuh beberapa menit.</p>
+          </div>
         </div>
         <button className="shrink-0 text-sm text-slate-400 underline" onClick={onLogout}>Keluar</button>
       </header>
