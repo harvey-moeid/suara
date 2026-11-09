@@ -1,0 +1,39 @@
+name: render
+
+on:
+  repository_dispatch:
+    types: [tts-render]
+
+permissions:
+  contents: read
+
+# Satu render sekaligus. Job lain tetap aman di antrean D1: runner mengklaim job berikutnya sendiri.
+concurrency:
+  group: tts-render
+  cancel-in-progress: false
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      WORKER_URL: ${{ vars.WORKER_URL || 'https://omnivoice-studio.harveymoeid.workers.dev' }}
+      JOB_ID: ${{ github.event.client_payload.job_id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-tts
+
+      - name: Render
+        env:
+          JOB_TOKEN: ${{ secrets.JOB_TOKEN }}
+        run: python scripts/render.py
+
+      - name: Tandai gagal bila runner mati atau dibatalkan
+        if: failure() || cancelled()
+        env:
+          JOB_TOKEN: ${{ secrets.JOB_TOKEN }}
+        run: |
+          curl -sS -X POST "$WORKER_URL/api/internal/fail-running" \
+            -H "Authorization: Bearer $JOB_TOKEN" -H 'Content-Type: application/json' \
+            -d "{\"error\":\"Render gagal atau dibatalkan (lihat log Actions)\",\"job_id\":\"$JOB_ID\"}" || true

@@ -1,0 +1,54 @@
+name: setup-tts
+description: Siapkan Python 3.11, ffmpeg, PyTorch CPU, OmniVoice, dan cache model Hugging Face
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: pip
+        cache-dependency-path: scripts/requirements.txt
+
+    - name: Paket sistem (ffmpeg, libsndfile)
+      shell: bash
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq ffmpeg libsndfile1
+
+    - name: Spesifikasi runner
+      shell: bash
+      run: |
+        echo "CPU core: $(nproc)"
+        lscpu | grep -E 'Model name' || true
+        free -g | sed -n 1,2p
+        df -h / | tail -1
+
+    - name: Revisi model Hugging Face
+      id: hf
+      shell: bash
+      run: |
+        REV=$(curl -fsS https://huggingface.co/api/models/k2-fsa/OmniVoice | python3 -c 'import sys,json;print(json.load(sys.stdin)["sha"])')
+        echo "Revisi model: $REV"
+        echo "HF_REV=$REV" >> "$GITHUB_ENV"
+        echo "HF_HOME=$GITHUB_WORKSPACE/.hf" >> "$GITHUB_ENV"
+        echo "rev=$REV" >> "$GITHUB_OUTPUT"
+
+    - name: Cache model OmniVoice
+      uses: actions/cache@v4
+      with:
+        path: .hf/hub/models--k2-fsa--OmniVoice
+        key: hf-omnivoice-${{ steps.hf.outputs.rev }}
+
+    - name: Cache model Whisper (hanya terpakai bila clone tanpa transkrip)
+      uses: actions/cache@v4
+      with:
+        path: .hf/hub/models--openai--whisper-large-v3-turbo
+        key: hf-whisper-large-v3-turbo-v1
+
+    - name: Pasang PyTorch CPU dan OmniVoice
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        pip install torch==2.8.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cpu
+        pip install -r scripts/requirements.txt
+        python -c "import torch, omnivoice; print('torch', torch.__version__)"

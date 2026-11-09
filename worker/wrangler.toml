@@ -1,0 +1,34 @@
+name = "omnivoice-studio"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+# SPA (hasil build web/) disajikan sebagai Static Assets; hanya /api/* yang dijalankan Worker lebih dulu.
+[assets]
+directory = "../web/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "omnivoice-studio"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "omnivoice-studio"
+database_id = "b28225bf-c964-47da-985c-2469e0995e81"
+migrations_dir = "migrations"
+
+# Pembersihan harian 20:17 UTC (03:17 WIB): hapus data > RETENTION_DAYS hari.
+[triggers]
+crons = ["17 20 * * *"]
+
+[vars]
+GITHUB_REPO = "harvey-moeid/suara"
+RENDER_EVENT = "tts-render"
+MAX_CHARS = "1500"
+DAILY_QUOTA = "20"
+RETENTION_DAYS = "7"
+
+# Secret (wrangler secret put / dashboard): APP_PASSCODE, JOB_TOKEN, GITHUB_DISPATCH_TOKEN

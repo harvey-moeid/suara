@@ -1,0 +1,73 @@
+name: benchmark
+
+# Uji render CPU tanpa Worker/secret: ukur kecepatan (RTF) dan validasi jalur auto + clone.
+on:
+  workflow_dispatch:
+    inputs:
+      text:
+        description: Teks uji
+        default: 'Halo, ini percobaan suara bahasa Indonesia dari OmniVoice. Pada tanggal 17/08/2026 harganya Rp 1.500.000, diskon 50%. Terima kasih sudah mencoba, semoga hasilnya terdengar jernih dan alami di telinga Anda.'
+      num_step:
+        description: Langkah difusi (8/16/32)
+        default: '8'
+      clone_test:
+        description: Uji juga mode clone (pakai hasil auto sebagai referensi)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-tts
+
+      - name: Uji normalisasi teks
+        run: python scripts/test_normalize.py
+
+      - name: Render auto
+        env:
+          INPUT_TEXT: ${{ inputs.text }}
+          INPUT_STEP: ${{ inputs.num_step }}
+        run: |
+          python - <<'PY'
+          import json, os
+          json.dump({"text": os.environ["INPUT_TEXT"], "mode": "auto", "language": "id",
+                     "num_step": int(os.environ["INPUT_STEP"]), "speed": 1.0}, open("in_auto.json", "w"))
+          PY
+          python scripts/render.py --local in_auto.json --out out_auto
+
+      - name: Render clone (referensi = hasil auto, transkrip diberikan)
+        if: ${{ inputs.clone_test }}
+        env:
+          INPUT_TEXT: ${{ inputs.text }}
+          INPUT_STEP: ${{ inputs.num_step }}
+        run: |
+          python - <<'PY'
+          import json, os
+          json.dump({"text": "Ini tes kloning suara dalam bahasa Indonesia.", "mode": "clone", "language": "id",
+                     "num_step": int(os.environ["INPUT_STEP"]), "speed": 1.0,
+                     "ref_path": "out_auto/output.wav",
+                     "ref_text": os.environ["INPUT_TEXT"][:120]}, open("in_clone.json", "w"))
+          PY
+          python scripts/render.py --local in_clone.json --out out_clone
+
+      - name: Uji jalur gagal (teks kosong harus menghasilkan status failed yang jelas)
+        run: |
+          echo '{"text": "   ", "mode": "auto", "language": "id", "num_step": 8}' > in_empty.json
+          if python scripts/render.py --local in_empty.json --out out_empty; then echo 'SEHARUSNYA GAGAL'; exit 1; fi
+          cat out_empty/summary.json
+          grep -q '"status": "failed"' out_empty/summary.json
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hasil-benchmark
+          path: |
+            out_auto/
+            out_clone/
+            out_empty/
