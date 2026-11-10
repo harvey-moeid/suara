@@ -255,6 +255,31 @@ app.post('/api/jobs', async (c) => {
   return c.json({ job_id: id }, 201);
 });
 
+// Daftar hasil suara persisten. Passcode middleware di atas melindungi seluruh data.
+app.get('/api/jobs', async (c) => {
+  const rawLimit = Number(c.req.query('limit') ?? 50);
+  const limit = Number.isFinite(rawLimit) ? Math.min(100, Math.max(1, Math.floor(rawLimit))) : 50;
+  const rows = await c.env.DB.prepare(
+    'SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?',
+  ).bind(limit).all<JobRow>();
+  const items = await Promise.all(rows.results.map(async (row) => {
+    const [input, audio] = await Promise.all([
+      readInput(c.env, row.id),
+      c.env.BUCKET.head(`jobs/${row.id}/output.mp3`),
+    ]);
+    const sourceText = typeof input?.text === 'string' ? input.text : '';
+    return {
+      ...publicJob(row),
+      text: sourceText,
+      preview: sourceText.slice(0, 140) || (row.status === 'failed' ? 'Render gagal' : 'Teks tidak tersedia'),
+      language: typeof input?.language === 'string' ? input.language : 'id',
+      speed: typeof input?.speed === 'number' ? input.speed : 1,
+      hasAudio: Boolean(audio),
+    };
+  }));
+  return c.json({ items, count: items.length, limit });
+});
+
 app.get('/api/jobs/:id', async (c) => {
   const id = c.req.param('id');
   if (!UUID_RE.test(id)) return bad(c, 404, 'Job tidak ditemukan');
