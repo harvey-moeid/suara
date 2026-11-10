@@ -1,8 +1,68 @@
 @import "tailwindcss";
 
-html,
-body {
-  background: #0f172a;
-  color: #e2e8f0;
-  -webkit-tap-highlight-color: transparent;
+/*
+ * Design tokens. Tailwind v4 membuat utilitas dari variabel --color-*:
+ * bg-canvas, bg-surface, bg-card, bg-brand, text-fg, text-muted, text-accent, border-line, dst.
+ */
+@theme {
+  --color-canvas: #080d19;
+  --color-surface: #101827;
+  --color-card: #172235;
+  --color-line: #263449;
+  --color-brand: #246bfd;
+  --color-accent: #38bdf8;
+  --color-fg: #f8fafc;
+  --color-muted: #94a3b8;
+
+  /* Warna status */
+  --color-ok: #34d399;
+  --color-warn: #fbbf24;
+  --color-bad: #f87171;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+
+  --shadow-card: 0 1px 0 0 rgb(255 255 255 / 0.03) inset, 0 8px 24px -12px rgb(0 0 0 / 0.55);
+}
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html {
+    background: var(--color-canvas);
+  }
+
+  body {
+    background: var(--color-canvas);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--color-brand) 45%, transparent);
+  }
+
+  input[type="range"],
+  input[type="checkbox"] {
+    accent-color: var(--color-brand);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }
