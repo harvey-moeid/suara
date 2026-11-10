@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AuthError, checkAuth, clearPass, fetchAudio, getJob, getMeta, getPass, listJobs, setPass, submitJob } from './api';
 import type { AudioLibraryItem, Job, Meta, Mode, SubmitPayload } from './api';
-import { loadHistory, saveHistory } from './history';
-import type { HistoryItem } from './history';
 import { LOGO_SRC } from './logo';
 
 const LANGS: [string, string][] = [['id', 'Indonesia'], ['jv', 'Jawa'], ['ms', 'Melayu'], ['en', 'Inggris']];
@@ -113,7 +111,6 @@ function Studio({ onLogout }: { onLogout: () => void }) {
   const [job, setJob] = useState<Job | null>(null);
   const [jobErr, setJobErr] = useState('');
   const [mp3Url, setMp3Url] = useState('');
-  const [history, setHistory] = useState<HistoryItem[]>(loadHistory);
   const [tab, setTab] = useState<'create' | 'results'>('create');
   const [library, setLibrary] = useState<AudioLibraryItem[]>([]);
   const [libraryLoading, setLibraryLoading] = useState(false);
@@ -157,14 +154,6 @@ function Studio({ onLogout }: { onLogout: () => void }) {
     if (tab === 'results') void refreshLibrary();
   }, [tab, refreshLibrary]);
 
-  const patchHistory = useCallback((id: string, patch: Partial<HistoryItem>) => {
-    setHistory((prev) => {
-      const next = prev.map((h) => (h.id === id ? { ...h, ...patch } : h));
-      saveHistory(next);
-      return next;
-    });
-  }, []);
-
   // Polling status job tiap 4 detik sampai done/failed.
   useEffect(() => {
     if (!activeId) return;
@@ -176,9 +165,9 @@ function Studio({ onLogout }: { onLogout: () => void }) {
         if (stop) return;
         setJob(j);
         setJobErr('');
-        patchHistory(activeId, { status: j.status });
         if (j.status === 'done' || j.status === 'failed') {
           void refreshMeta();
+          void refreshLibrary();
           return;
         }
       } catch (e) {
@@ -197,7 +186,7 @@ function Studio({ onLogout }: { onLogout: () => void }) {
       stop = true;
       window.clearTimeout(timer);
     };
-  }, [activeId, onLogout, patchHistory, refreshMeta]);
+  }, [activeId, onLogout, refreshLibrary, refreshMeta]);
 
   // Muat MP3 untuk pemutar saat selesai.
   useEffect(() => {
@@ -306,12 +295,6 @@ function Studio({ onLogout }: { onLogout: () => void }) {
     try {
       lastPayload.current = p;
       const r = await submitJob(p);
-      const item: HistoryItem = { id: r.job_id, createdAt: Date.now(), preview: p.text.slice(0, 60), mode: p.mode, status: 'queued' };
-      setHistory((prev) => {
-        const next = [item, ...prev];
-        saveHistory(next);
-        return next;
-      });
       setActiveId(r.job_id);
       setTab('results');
       void refreshMeta();
