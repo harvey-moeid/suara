@@ -93,6 +93,16 @@ export async function checkAuth(pass: string): Promise<boolean> {
   return true;
 }
 
+// Cek ringan ke endpoint yang sudah ada (/api/health, tanpa passcode).
+// Mengembalikan waktu respons (ms) yang diukur dari browser.
+export async function getHealth(): Promise<number> {
+  const t0 = performance.now();
+  const res = await fetch('/api/health', { cache: 'no-store' }).catch(() => null);
+  if (!res) throw new Error('Tidak dapat terhubung ke server');
+  if (!res.ok) throw new Error(`Server menjawab ${res.status}`);
+  return Math.round(performance.now() - t0);
+}
+
 export async function getMeta(): Promise<Meta> {
   return parse<Meta>(await call('/api/meta'));
 }
