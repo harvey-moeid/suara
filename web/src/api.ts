@@ -15,6 +15,14 @@ export interface Job {
   createdAt: number;
 }
 
+export interface AudioLibraryItem extends Job {
+  text: string;
+  preview: string;
+  language: string;
+  speed: number;
+  hasAudio: boolean;
+}
+
 export interface Meta {
   quotaUsed: number;
   quotaMax: number;
@@ -115,4 +123,9 @@ export async function fetchAudio(id: string, fmt: 'mp3' | 'wav'): Promise<string
     throw new Error((data as { error?: string }).error ?? 'Audio tidak tersedia');
   }
   return URL.createObjectURL(await res.blob());
+}
+
+export async function listJobs(limit = 50): Promise<AudioLibraryItem[]> {
+  const data = await parse<{ items: AudioLibraryItem[] }>(await call(`/api/jobs?limit=${limit}`));
+  return data.items;
 }

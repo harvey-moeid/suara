@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AuthError, checkAuth, clearPass, fetchAudio, getJob, getMeta, getPass, setPass, submitJob } from './api';
-import type { Job, Meta, Mode, SubmitPayload } from './api';
-import { loadHistory, saveHistory } from './history';
-import type { HistoryItem } from './history';
+import { AuthError, checkAuth, clearPass, fetchAudio, getJob, getMeta, getPass, listJobs, setPass, submitJob } from './api';
+import type { AudioLibraryItem, Job, Meta, Mode, SubmitPayload } from './api';
 import { LOGO_SRC } from './logo';
 
 const LANGS: [string, string][] = [['id', 'Indonesia'], ['jv', 'Jawa'], ['ms', 'Melayu'], ['en', 'Inggris']];
@@ -113,7 +111,10 @@ function Studio({ onLogout }: { onLogout: () => void }) {
   const [job, setJob] = useState<Job | null>(null);
   const [jobErr, setJobErr] = useState('');
   const [mp3Url, setMp3Url] = useState('');
-  const [history, setHistory] = useState<HistoryItem[]>(loadHistory);
+  const [tab, setTab] = useState<'create' | 'results'>('create');
+  const [library, setLibrary] = useState<AudioLibraryItem[]>([]);
+  const [libraryLoading, setLibraryLoading] = useState(false);
+  const [libraryErr, setLibraryErr] = useState('');
 
   const lastPayload = useRef<SubmitPayload | null>(null);
   const recRef = useRef<MediaRecorder | null>(null);
@@ -122,6 +123,19 @@ function Studio({ onLogout }: { onLogout: () => void }) {
   const recStart = useRef(0);
 
   const maxChars = meta?.maxChars ?? 1500;
+
+  const refreshLibrary = useCallback(async () => {
+    setLibraryLoading(true);
+    setLibraryErr('');
+    try {
+      setLibrary(await listJobs(100));
+    } catch (e) {
+      if (e instanceof AuthError) onLogout();
+      else setLibraryErr(errMsg(e));
+    } finally {
+      setLibraryLoading(false);
+    }
+  }, [onLogout]);
 
   const refreshMeta = useCallback(async () => {
     try {
@@ -133,15 +147,12 @@ function Studio({ onLogout }: { onLogout: () => void }) {
 
   useEffect(() => {
     void refreshMeta();
-  }, [refreshMeta]);
+    void refreshLibrary();
+  }, [refreshMeta, refreshLibrary]);
 
-  const patchHistory = useCallback((id: string, patch: Partial<HistoryItem>) => {
-    setHistory((prev) => {
-      const next = prev.map((h) => (h.id === id ? { ...h, ...patch } : h));
-      saveHistory(next);
-      return next;
-    });
-  }, []);
+  useEffect(() => {
+    if (tab === 'results') void refreshLibrary();
+  }, [tab, refreshLibrary]);
 
   // Polling status job tiap 4 detik sampai done/failed.
   useEffect(() => {
@@ -154,9 +165,9 @@ function Studio({ onLogout }: { onLogout: () => void }) {
         if (stop) return;
         setJob(j);
         setJobErr('');
-        patchHistory(activeId, { status: j.status });
         if (j.status === 'done' || j.status === 'failed') {
           void refreshMeta();
+          void refreshLibrary();
           return;
         }
       } catch (e) {
@@ -175,7 +186,7 @@ function Studio({ onLogout }: { onLogout: () => void }) {
       stop = true;
       window.clearTimeout(timer);
     };
-  }, [activeId, onLogout, patchHistory, refreshMeta]);
+  }, [activeId, onLogout, refreshLibrary, refreshMeta]);
 
   // Muat MP3 untuk pemutar saat selesai.
   useEffect(() => {
@@ -284,14 +295,10 @@ function Studio({ onLogout }: { onLogout: () => void }) {
     try {
       lastPayload.current = p;
       const r = await submitJob(p);
-      const item: HistoryItem = { id: r.job_id, createdAt: Date.now(), preview: p.text.slice(0, 60), mode: p.mode, status: 'queued' };
-      setHistory((prev) => {
-        const next = [item, ...prev];
-        saveHistory(next);
-        return next;
-      });
       setActiveId(r.job_id);
+      setTab('results');
       void refreshMeta();
+      void refreshLibrary();
     } catch (e) {
       if (e instanceof AuthError) onLogout();
       else setJobErr(errMsg(e));
@@ -347,7 +354,12 @@ function Studio({ onLogout }: { onLogout: () => void }) {
         <button className="shrink-0 text-sm text-slate-400 underline" onClick={onLogout}>Keluar</button>
       </header>
 
-      <section className={card}>
+      <nav className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-900 p-1 ring-1 ring-slate-700" aria-label="Navigasi utama">
+        <button className={`rounded-xl px-3 py-3 text-sm font-semibold ${tab === 'create' ? 'bg-sky-600 text-white' : 'text-slate-300'}`} onClick={() => setTab('create')}>Buat suara</button>
+        <button className={`rounded-xl px-3 py-3 text-sm font-semibold ${tab === 'results' ? 'bg-sky-600 text-white' : 'text-slate-300'}`} onClick={() => setTab('results')}>Hasil suara ({library.length})</button>
+      </nav>
+
+      {tab === 'create' && <section className={card}>
         <div className="mb-3 grid grid-cols-3 gap-2">
           {MODES.map(([m, l]) => (
             <button key={m} onClick={() => setMode(m)}
@@ -440,7 +452,7 @@ function Studio({ onLogout }: { onLogout: () => void }) {
         <button className={`${btn} mt-4 w-full bg-sky-600 text-white`} disabled={busy || recording} onClick={onSubmit}>
           {submitting ? 'Mengirim...' : 'Buat suara'}
         </button>
-      </section>
+      </section>}
 
       {(job || jobErr) && (
         <section className={card} aria-live="polite">
@@ -475,23 +487,63 @@ function Studio({ onLogout }: { onLogout: () => void }) {
         </section>
       )}
 
-      {history.length > 0 && (
+      {tab === 'results' && (
         <section className={card}>
-          <div className="mb-2 flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Riwayat</h2>
-            <button className="text-sm text-slate-400 underline" onClick={() => { setHistory([]); saveHistory([]); }}>Hapus riwayat</button>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold">Hasil suara</h2>
+              <p className="text-xs text-slate-400">Tersimpan di server dan dapat dibuka kembali dari perangkat lain.</p>
+            </div>
+            <button className="shrink-0 text-sm text-sky-300 underline" onClick={() => void refreshLibrary()} disabled={libraryLoading}>
+              {libraryLoading ? 'Memuat...' : 'Segarkan'}
+            </button>
           </div>
-          <ul className="space-y-2">
-            {history.map((h) => (
-              <li key={h.id}>
-                <button className="w-full rounded-xl bg-slate-900 p-3 text-left ring-1 ring-slate-700" onClick={() => { setJob(null); setJobErr(''); setActiveId(h.id); }}>
-                  <span className="block truncate text-sm">{h.preview || '(tanpa teks)'}</span>
-                  <span className="text-xs text-slate-400">{new Date(h.createdAt).toLocaleString('id-ID')} | {h.mode} | {h.status}</span>
-                </button>
+          {libraryErr && <p className="mb-3 text-sm text-red-400">{libraryErr}</p>}
+          {libraryLoading && library.length === 0 && <p className="text-sm text-slate-400">Memuat daftar hasil...</p>}
+          {!libraryLoading && library.length === 0 && !libraryErr && (
+            <div className="rounded-xl bg-slate-900 p-5 text-center ring-1 ring-slate-700">
+              <p className="font-medium">Belum ada hasil suara</p>
+              <p className="mt-1 text-sm text-slate-400">Buat suara pertama. Hasil render akan otomatis muncul di sini.</p>
+              <button className={`${btn} mt-3 bg-sky-600 text-white`} onClick={() => setTab('create')}>Mulai buat suara</button>
+            </div>
+          )}
+          <ul className="space-y-3">
+            {library.map((item) => (
+              <li key={item.id} className="rounded-xl bg-slate-900 p-3 ring-1 ring-slate-700">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="min-w-0 whitespace-pre-wrap break-words text-sm">{item.preview}</p>
+                  <span className={`shrink-0 rounded-full px-2 py-1 text-xs ${item.status === 'done' ? 'bg-emerald-900 text-emerald-300' : item.status === 'failed' ? 'bg-red-900 text-red-300' : 'bg-amber-900 text-amber-300'}`}>
+                    {item.status === 'done' ? 'Selesai' : item.status === 'failed' ? 'Gagal' : item.status === 'running' ? 'Merender' : 'Antre'}
+                  </span>
+                </div>
+                <p className="mt-2 text-xs text-slate-400">{new Date(item.createdAt * 1000).toLocaleString('id-ID')} · {item.mode} · {item.language.toUpperCase()} · {item.chars} karakter</p>
+                {item.status === 'done' && item.hasAudio ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button className={`${btn} bg-sky-600 text-white`} onClick={() => { setJob(null); setJobErr(''); setActiveId(item.id); }}>Putar / buka</button>
+                    <button className={`${btn} bg-slate-800 text-slate-200 ring-1 ring-slate-600`} onClick={async () => {
+                      try {
+                        const url = await fetchAudio(item.id, 'mp3');
+                        const a = document.createElement('a'); a.href = url; a.download = `suara-${item.id.slice(0, 8)}.mp3`; a.click();
+                        window.setTimeout(() => URL.revokeObjectURL(url), 10000);
+                      } catch (e) { setLibraryErr(errMsg(e)); }
+                    }}>Unduh MP3</button>
+                    <button className={`${btn} bg-slate-800 text-slate-200 ring-1 ring-slate-600`} onClick={async () => {
+                      try {
+                        const url = await fetchAudio(item.id, 'wav');
+                        const a = document.createElement('a'); a.href = url; a.download = `suara-${item.id.slice(0, 8)}.wav`; a.click();
+                        window.setTimeout(() => URL.revokeObjectURL(url), 10000);
+                      } catch (e) { setLibraryErr(errMsg(e)); }
+                    }}>Unduh WAV</button>
+                  </div>
+                ) : item.status === 'failed' ? (
+                  <p className="mt-2 text-xs text-red-300">{item.error || 'Render gagal'}</p>
+                ) : (
+                  <button className="mt-3 text-sm text-sky-300 underline" onClick={() => { setJob(null); setJobErr(''); setActiveId(item.id); }}>Lihat progres</button>
+                )}
               </li>
             ))}
           </ul>
-          <p className="mt-2 text-xs text-slate-500">Server menghapus hasil dan referensi setelah 7 hari.</p>
+          <p className="mt-3 text-xs text-slate-500">Maksimal 100 pekerjaan terbaru. Data dan file audio di server mengikuti masa retensi 7 hari.</p>
         </section>
       )}
     </div>
