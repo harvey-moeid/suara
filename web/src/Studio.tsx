@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AuthError, fetchAudio, getJob, submitJob } from './api';
-import type { AudioLibraryItem, Job, Meta, Mode, SubmitPayload } from './api';
+import type { AudioLibraryItem, Job, Meta, Mode, SubmitPayload, Voice } from './api';
 import { errMsg, fmtDur, MODE_LABEL } from './format';
 import type { View } from './nav';
 import { Button } from './ui/Button';
@@ -10,6 +10,7 @@ import { AudioIcon, RefreshIcon } from './ui/icons';
 import { ProgressBar } from './ui/ProgressBar';
 import { StatusBadge } from './ui/StatusBadge';
 import { BTN, BTN_DANGER, BTN_PRIMARY, BTN_SECONDARY, BTN_WARN, CARD, FIELD, LABEL } from './ui/styles';
+import VoicePicker from './VoicePicker';
 
 const LANGS: [string, string][] = [['id', 'Indonesia'], ['jv', 'Jawa'], ['ms', 'Melayu'], ['en', 'Inggris']];
 const STEPS: [number, string][] = [[8, 'Draf (8)'], [16, 'Standar (16)'], [32, 'Terbaik (32)']];
@@ -41,6 +42,7 @@ interface StudioProps {
 
 // Logika generator tidak diubah dari versi sebelumnya. Perbedaan Phase 1:
 // meta/library kini datang dari props (hook bersama), tab dikendalikan shell, dan kelas visual memakai design tokens.
+// Suara tersimpan: di mode clone, pengguna bisa memilih suara tersimpan (voiceId) alih-alih unggah ulang referensi.
 export default function Studio({
   view,
   onNavigate,
@@ -65,6 +67,7 @@ export default function Studio({
   const [refText, setRefText] = useState('');
   const [consent, setConsent] = useState(false);
   const [ref, setRef] = useState<RefState | null>(null);
+  const [voiceId, setVoiceId] = useState('');
   const [recording, setRecording] = useState(false);
   const [recSec, setRecSec] = useState(0);
   const [formErr, setFormErr] = useState('');
@@ -142,11 +145,19 @@ export default function Studio({
     };
   }, [job?.id, job?.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Referensi baru (unggah/rekam) otomatis melepas pilihan suara tersimpan.
   const acceptRef = (blob: Blob, name: string) => {
+    setVoiceId('');
     setRef((prev) => {
       if (prev) URL.revokeObjectURL(prev.url);
       return { blob, name, url: URL.createObjectURL(blob) };
     });
+  };
+
+  const onSelectVoice = (v: Voice | null) => {
+    setVoiceId(v ? v.id : '');
+    setFormErr('');
+    if (v && v.refText) setRefText(v.refText);
   };
 
   const onPickFile = (f: File | null) => {
@@ -245,15 +256,17 @@ export default function Studio({
     const t = text.trim();
     if (!t) return setFormErr('Teks masih kosong');
     if (t.length > maxChars) return setFormErr(`Teks terlalu panjang (maks ${maxChars} karakter)`);
-    if (mode === 'clone') {
-      if (!ref) return setFormErr('Unggah atau rekam audio referensi dulu');
+    if (mode === 'clone' && !voiceId) {
+      if (!ref) return setFormErr('Pilih suara tersimpan, atau unggah/rekam audio referensi dulu');
       if (!consent) return setFormErr('Centang izin memakai suara ini');
     }
     if (mode === 'design' && !instruct) return setFormErr('Pilih minimal satu atribut suara');
     void doSubmit({
       text: t, mode, language, numStep, speed, instruct: mode === 'design' ? instruct : '',
-      refText: mode === 'clone' ? refText.trim() : '', consent, ref: mode === 'clone' && ref ? ref.blob : null,
+      refText: mode === 'clone' ? refText.trim() : '', consent,
+      ref: mode === 'clone' && !voiceId && ref ? ref.blob : null,
       refName: ref?.name ?? 'ref',
+      voiceId: mode === 'clone' ? voiceId : '',
     });
   };
 
@@ -293,36 +306,48 @@ export default function Studio({
 
         {mode === 'clone' && (
           <div className="mt-3 space-y-3">
-            <div>
-              <span className={LABEL}>Suara referensi (3-10 detik, maks 30 detik / 10 MB)</span>
-              <div className="flex flex-wrap gap-2">
-                <label className={`${BTN_SECONDARY} cursor-pointer`}>
-                  Unggah audio
-                  <input type="file" accept="audio/*" className="hidden" onChange={(e) => { onPickFile(e.target.files?.[0] ?? null); e.target.value = ''; }} />
-                </label>
-                {recording ? (
-                  <button type="button" className={BTN_DANGER} onClick={stopRec}>Berhenti ({recSec} dtk)</button>
-                ) : (
-                  <button type="button" className={BTN_SECONDARY} onClick={() => void startRec()}>Rekam suara</button>
+            <VoicePicker
+              selectedId={voiceId}
+              onSelect={onSelectVoice}
+              newRef={ref ? { blob: ref.blob, name: ref.name } : null}
+              refText={refText}
+              consent={consent}
+              onLogout={onLogout}
+            />
+            {!voiceId && (
+              <div>
+                <span className={LABEL}>Suara referensi (3-10 detik, maks 30 detik / 10 MB)</span>
+                <div className="flex flex-wrap gap-2">
+                  <label className={`${BTN_SECONDARY} cursor-pointer`}>
+                    Unggah audio
+                    <input type="file" accept="audio/*" className="hidden" onChange={(e) => { onPickFile(e.target.files?.[0] ?? null); e.target.value = ''; }} />
+                  </label>
+                  {recording ? (
+                    <button type="button" className={BTN_DANGER} onClick={stopRec}>Berhenti ({recSec} dtk)</button>
+                  ) : (
+                    <button type="button" className={BTN_SECONDARY} onClick={() => void startRec()}>Rekam suara</button>
+                  )}
+                </div>
+                {ref && (
+                  <div className="mt-2 space-y-1">
+                    <audio controls src={ref.url} className="w-full" />
+                    <p className="truncate text-xs text-muted">{ref.name}</p>
+                  </div>
                 )}
               </div>
-              {ref && (
-                <div className="mt-2 space-y-1">
-                  <audio controls src={ref.url} className="w-full" />
-                  <p className="truncate text-xs text-muted">{ref.name}</p>
-                </div>
-              )}
-            </div>
+            )}
             <div>
               <label className={LABEL} htmlFor="reftext">Transkrip referensi (opsional)</label>
               <textarea id="reftext" className={`${FIELD} min-h-20`} value={refText} onChange={(e) => setRefText(e.target.value)}
                 placeholder="Apa yang diucapkan di audio referensi" maxLength={500} />
               <p className="mt-1 text-xs text-muted">Kosong = model Whisper menstranskripsi otomatis di runner. Itu menambah unduhan (~1,6 GB, hanya sekali lalu di-cache) dan waktu. Isi transkrip agar lebih cepat dan akurat.</p>
             </div>
-            <label className="flex items-start gap-3 text-sm">
-              <input type="checkbox" className="mt-1 h-5 w-5" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
-              <span>Saya memiliki izin memakai suara ini.</span>
-            </label>
+            {!voiceId && (
+              <label className="flex items-start gap-3 text-sm">
+                <input type="checkbox" className="mt-1 h-5 w-5" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
+                <span>Saya memiliki izin memakai suara ini.</span>
+              </label>
+            )}
           </div>
         )}
 
@@ -455,7 +480,7 @@ export default function Studio({
               </li>
             ))}
           </ul>
-          <p className="mt-3 text-xs text-muted">Maksimal 100 pekerjaan terbaru. Data dan file audio di server mengikuti masa retensi 7 hari.</p>
+          <p className="mt-3 text-xs text-muted">Maksimal 100 pekerjaan terbaru. Data dan file audio hasil di server mengikuti masa retensi 7 hari. Suara referensi yang disimpan (Clone suara) tidak ikut terhapus.</p>
         </section>
       )}
     </div>

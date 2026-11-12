@@ -23,6 +23,15 @@ export interface AudioLibraryItem extends Job {
   hasAudio: boolean;
 }
 
+// Suara referensi yang disimpan permanen (tidak ikut dibersihkan cron retensi).
+export interface Voice {
+  id: string;
+  name: string;
+  refText: string;
+  bytes: number;
+  createdAt: number;
+}
+
 export interface Meta {
   quotaUsed: number;
   quotaMax: number;
@@ -41,6 +50,8 @@ export interface SubmitPayload {
   consent: boolean;
   ref: Blob | null;
   refName: string;
+  // Bila diisi (mode clone), server memakai suara tersimpan dan mengabaikan unggahan ref.
+  voiceId?: string;
 }
 
 export class AuthError extends Error {}
@@ -121,7 +132,8 @@ export async function submitJob(p: SubmitPayload): Promise<{ job_id: string }> {
   fd.set('instruct', p.instruct);
   fd.set('ref_text', p.refText);
   fd.set('consent', p.consent ? 'true' : 'false');
-  if (p.ref) fd.set('ref', p.ref, p.refName);
+  if (p.voiceId) fd.set('voice_id', p.voiceId);
+  else if (p.ref) fd.set('ref', p.ref, p.refName);
   return parse<{ job_id: string }>(await call('/api/jobs', { method: 'POST', body: fd }));
 }
 
@@ -138,4 +150,32 @@ export async function fetchAudio(id: string, fmt: 'mp3' | 'wav'): Promise<string
 export async function listJobs(limit = 50): Promise<AudioLibraryItem[]> {
   const data = await parse<{ items: AudioLibraryItem[] }>(await call(`/api/jobs?limit=${limit}`));
   return data.items;
+}
+
+// ---- Suara tersimpan ----
+export async function listVoices(): Promise<{ items: Voice[]; max: number }> {
+  return parse<{ items: Voice[]; max: number }>(await call('/api/voices'));
+}
+
+export async function saveVoice(name: string, ref: Blob, refName: string, refText: string): Promise<Voice> {
+  const fd = new FormData();
+  fd.set('name', name);
+  fd.set('ref_text', refText);
+  fd.set('consent', 'true');
+  fd.set('ref', ref, refName);
+  const data = await parse<{ voice: Voice }>(await call('/api/voices', { method: 'POST', body: fd }));
+  return data.voice;
+}
+
+export async function deleteVoice(id: string): Promise<void> {
+  await parse<{ ok: boolean }>(await call(`/api/voices/${id}`, { method: 'DELETE' }));
+}
+
+export async function fetchVoiceAudio(id: string): Promise<string> {
+  const res = await call(`/api/voices/${id}/audio`);
+  if (!res.ok) {
+    const data: unknown = await res.json().catch(() => ({}));
+    throw new Error((data as { error?: string }).error ?? 'Audio suara tidak tersedia');
+  }
+  return URL.createObjectURL(await res.blob());
 }
