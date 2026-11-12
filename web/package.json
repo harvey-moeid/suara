@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build"
+    "build": "tsc --noEmit && vite build && node scripts/build-pwa.mjs",
+    "test:pwa": "node scripts/test-sw.mjs"
   },
   "dependencies": {
     "react": "19.3.1",
