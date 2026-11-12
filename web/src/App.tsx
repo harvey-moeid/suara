@@ -17,7 +17,11 @@ export default function App() {
       setState('gate');
       return;
     }
-    checkAuth(p).then((ok) => setState(ok ? 'ok' : 'gate')).catch(() => setState('gate'));
+    // Offline (mis. aplikasi terpasang dibuka tanpa sinyal): passcode tersimpan tetap dipakai dan dashboard dibuka,
+    // jangan lempar ke layar passcode. Passcode salah tetap terdeteksi (401) begitu data dimuat saat online.
+    checkAuth(p)
+      .then((ok) => setState(ok ? 'ok' : 'gate'))
+      .catch(() => setState(navigator.onLine ? 'gate' : 'ok'));
   }, []);
 
   if (state === 'loading') {

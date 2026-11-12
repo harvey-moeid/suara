@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { View } from '../nav';
 import { cx } from '../ui/cx';
 import { MobileNav } from './MobileNav';
+import { PwaBanner } from './PwaBanner';
 import type { Quota } from './quota';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
@@ -46,6 +47,7 @@ export function AppShell({ view, title, subtitle, actions, quota, apiStatus, res
             wide ? 'max-w-6xl' : 'max-w-3xl',
           )}
         >
+          <PwaBanner />
           <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
             <div className="min-w-0">
               <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{title}</h1>
