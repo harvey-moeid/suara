@@ -34,6 +34,15 @@ type JobRow = {
   updated_at: number;
 };
 
+type VoiceRow = {
+  id: string;
+  name: string;
+  key: string;
+  ref_text: string;
+  bytes: number;
+  created_at: number;
+};
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const MODES = new Set(['auto', 'clone', 'design']);
 const STEPS = new Set([8, 16, 32]);
@@ -46,6 +55,9 @@ const DESIGN_ATTRS = new Set([
 ]);
 const MAX_REF_BYTES = 10 * 1024 * 1024;
 const MAX_RESULT_BYTES = 60 * 1024 * 1024;
+// Batas suara tersimpan: menjaga pemakaian R2 free tier (20 x maks 10 MB = maks 200 MB).
+const MAX_VOICES = 20;
+const MAX_VOICE_NAME = 60;
 const WIB_MS = 7 * 3600 * 1000;
 const enc = new TextEncoder();
 
@@ -83,6 +95,10 @@ function publicJob(j: JobRow) {
     rtf: j.rtf,
     createdAt: j.created_at,
   };
+}
+
+function publicVoice(v: VoiceRow) {
+  return { id: v.id, name: v.name, refText: v.ref_text, bytes: v.bytes, createdAt: v.created_at };
 }
 
 function refExt(file: File): string {
@@ -166,6 +182,81 @@ app.get('/api/meta', async (c) => {
   });
 });
 
+// ---- Suara tersimpan (voice library) ----
+// Audio referensi yang disimpan di sini TIDAK ikut dibersihkan cron retensi; hanya terhapus lewat DELETE.
+app.get('/api/voices', async (c) => {
+  const r = await c.env.DB.prepare('SELECT * FROM voices ORDER BY created_at DESC').all<VoiceRow>();
+  return c.json({ items: r.results.map(publicVoice), max: MAX_VOICES });
+});
+
+app.post('/api/voices', async (c) => {
+  let form: FormData;
+  try {
+    form = await c.req.formData();
+  } catch {
+    return bad(c, 400, 'Form tidak valid');
+  }
+  const name = String(form.get('name') ?? '').trim();
+  const refText = String(form.get('ref_text') ?? '').trim();
+  const consent = form.get('consent') === 'true';
+  const ref = form.get('ref');
+
+  if (!name) return bad(c, 400, 'Nama suara wajib diisi');
+  if (name.length > MAX_VOICE_NAME) return bad(c, 400, `Nama suara maksimal ${MAX_VOICE_NAME} karakter`);
+  if (refText.length > 500) return bad(c, 400, 'Transkrip referensi terlalu panjang');
+  if (!consent) return bad(c, 400, 'Centang izin memakai suara referensi');
+  if (!(ref instanceof File) || ref.size === 0) return bad(c, 400, 'Audio referensi wajib diisi');
+  if (ref.size > MAX_REF_BYTES) return bad(c, 400, 'Audio referensi maksimal 10 MB');
+
+  const count = await c.env.DB.prepare('SELECT COUNT(*) AS n FROM voices').first<{ n: number }>();
+  if ((count?.n ?? 0) >= MAX_VOICES) {
+    return bad(c, 429, `Suara tersimpan penuh (maks ${MAX_VOICES}). Hapus salah satu dulu.`);
+  }
+
+  const id = crypto.randomUUID();
+  const key = `voices/${id}/ref.${refExt(ref)}`;
+  const created = nowSec();
+  try {
+    await c.env.BUCKET.put(key, await ref.arrayBuffer(), {
+      httpMetadata: { contentType: ref.type || 'application/octet-stream' },
+    });
+    await c.env.DB.prepare(
+      'INSERT INTO voices (id, name, key, ref_text, bytes, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    ).bind(id, name, key, refText, ref.size, created).run();
+  } catch {
+    await c.env.BUCKET.delete(key).catch(() => undefined); // jangan tinggalkan file yatim
+    return bad(c, 500, 'Gagal menyimpan suara');
+  }
+  const row: VoiceRow = { id, name, key, ref_text: refText, bytes: ref.size, created_at: created };
+  return c.json({ voice: publicVoice(row) }, 201);
+});
+
+app.get('/api/voices/:id/audio', async (c) => {
+  const id = c.req.param('id');
+  if (!UUID_RE.test(id)) return bad(c, 404, 'Suara tidak ditemukan');
+  const row = await c.env.DB.prepare('SELECT * FROM voices WHERE id = ?').bind(id).first<VoiceRow>();
+  if (!row) return bad(c, 404, 'Suara tidak ditemukan');
+  const obj = await c.env.BUCKET.get(row.key);
+  if (!obj) return bad(c, 404, 'File suara tidak ada di penyimpanan');
+  return new Response(obj.body, {
+    headers: {
+      'Content-Type': obj.httpMetadata?.contentType ?? 'application/octet-stream',
+      'Content-Length': String(obj.size),
+      'Cache-Control': 'private, no-store',
+    },
+  });
+});
+
+app.delete('/api/voices/:id', async (c) => {
+  const id = c.req.param('id');
+  if (!UUID_RE.test(id)) return bad(c, 404, 'Suara tidak ditemukan');
+  const row = await c.env.DB.prepare('SELECT * FROM voices WHERE id = ?').bind(id).first<VoiceRow>();
+  if (!row) return bad(c, 404, 'Suara tidak ditemukan');
+  await c.env.BUCKET.delete(row.key);
+  await c.env.DB.prepare('DELETE FROM voices WHERE id = ?').bind(id).run();
+  return c.json({ ok: true });
+});
+
 app.post('/api/jobs', async (c) => {
   let form: FormData;
   try {
@@ -180,6 +271,7 @@ app.post('/api/jobs', async (c) => {
   const speed = Number(form.get('speed') ?? 1);
   const rawInstruct = String(form.get('instruct') ?? '');
   const refText = String(form.get('ref_text') ?? '').trim();
+  const voiceId = String(form.get('voice_id') ?? '').trim();
   const consent = form.get('consent') === 'true';
   const ref = form.get('ref');
   const maxChars = Number(c.env.MAX_CHARS);
@@ -202,11 +294,19 @@ app.post('/api/jobs', async (c) => {
   }
 
   let refFile: File | null = null;
+  let voice: VoiceRow | null = null;
   if (mode === 'clone') {
-    if (!consent) return bad(c, 400, 'Centang izin memakai suara referensi');
-    if (!(ref instanceof File) || ref.size === 0) return bad(c, 400, 'Audio referensi wajib diisi');
-    if (ref.size > MAX_REF_BYTES) return bad(c, 400, 'Audio referensi maksimal 10 MB');
-    refFile = ref;
+    if (voiceId) {
+      // Pakai suara tersimpan: izin sudah dicentang saat menyimpan, tidak perlu unggah ulang.
+      if (!UUID_RE.test(voiceId)) return bad(c, 400, 'voice_id tidak valid');
+      voice = await c.env.DB.prepare('SELECT * FROM voices WHERE id = ?').bind(voiceId).first<VoiceRow>();
+      if (!voice) return bad(c, 404, 'Suara tersimpan tidak ditemukan (mungkin sudah dihapus)');
+    } else {
+      if (!consent) return bad(c, 400, 'Centang izin memakai suara referensi');
+      if (!(ref instanceof File) || ref.size === 0) return bad(c, 400, 'Audio referensi wajib diisi');
+      if (ref.size > MAX_REF_BYTES) return bad(c, 400, 'Audio referensi maksimal 10 MB');
+      refFile = ref;
+    }
   }
 
   if (!c.env.GITHUB_DISPATCH_TOKEN) return bad(c, 503, 'GITHUB_DISPATCH_TOKEN belum diatur');
@@ -220,14 +320,19 @@ app.post('/api/jobs', async (c) => {
 
   const id = crypto.randomUUID();
   try {
-    let refKey: string | null = null;
+    // Suara tersimpan memakai key voices/..., bukan salinan per job, jadi tidak ikut terhapus cron.
+    let refKey: string | null = voice ? voice.key : null;
     if (refFile) {
       refKey = `refs/${id}/ref.${refExt(refFile)}`;
       await c.env.BUCKET.put(refKey, await refFile.arrayBuffer(), {
         httpMetadata: { contentType: refFile.type || 'application/octet-stream' },
       });
     }
-    const input = { text, mode, language, num_step: numStep, speed, instruct, ref_text: refText, ref_key: refKey };
+    const input = {
+      text, mode, language, num_step: numStep, speed, instruct,
+      ref_text: refText || (voice ? voice.ref_text : ''),
+      ref_key: refKey,
+    };
     await c.env.BUCKET.put(`jobs/${id}/input.json`, JSON.stringify(input), {
       httpMetadata: { contentType: 'application/json' },
     });
@@ -340,7 +445,10 @@ app.get('/api/internal/jobs/:id/ref', async (c) => {
   if (!UUID_RE.test(id)) return bad(c, 404, 'Tidak ditemukan');
   const input = await readInput(c.env, id);
   const key = input?.ref_key;
-  if (typeof key !== 'string' || !key.startsWith(`refs/${id}/`)) return bad(c, 404, 'Referensi tidak ada');
+  // refs/{id}/ = unggahan milik job ini; voices/ = suara tersimpan (key ditulis server saat job dibuat).
+  if (typeof key !== 'string' || !(key.startsWith(`refs/${id}/`) || key.startsWith('voices/'))) {
+    return bad(c, 404, 'Referensi tidak ada');
+  }
   const obj = await c.env.BUCKET.get(key);
   if (!obj) return bad(c, 404, 'Referensi tidak ada');
   return new Response(obj.body, {
@@ -417,6 +525,7 @@ app.notFound((c) => {
 });
 
 // ---- Cron: bersihkan data lama (privasi suara referensi) ----
+// Hanya menyentuh refs/{jobId}/ dan jobs/{jobId}/. Suara tersimpan (voices/) sengaja tidak dihapus.
 async function cleanup(env: Env) {
   const t = nowSec();
   const cutoff = t - Number(env.RETENTION_DAYS) * 86400;
