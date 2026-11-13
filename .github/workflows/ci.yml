@@ -45,6 +45,10 @@ jobs:
           npm install --no-audit --no-fund
           npm run build
 
+      - name: Uji service worker PWA
+        working-directory: web
+        run: npm run test:pwa
+
       - name: Cek tipe Worker
         working-directory: worker
         run: |

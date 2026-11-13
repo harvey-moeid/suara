@@ -55,6 +55,14 @@
     accent-color: var(--color-brand);
   }
 
+  /* Aplikasi terpasang: cegah tarik-untuk-muat-ulang Android yang tak sengaja menghapus teks dan rekaman di Studio. */
+  @media (display-mode: standalone) {
+    html,
+    body {
+      overscroll-behavior-y: none;
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     *,
     ::before,

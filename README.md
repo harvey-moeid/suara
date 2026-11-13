@@ -39,6 +39,23 @@ Endpoint (semua butuh header `x-passcode`):
 | DELETE | `/api/voices/:id` | hapus suara |
 | POST | `/api/jobs` | tambah field `voice_id` (mode clone) untuk memakai suara tersimpan |
 
+## Aplikasi Android (PWA)
+
+OmniVoice Studio bisa dipasang di layar utama Android lewat Chrome. Tidak perlu Play Store.
+
+- **Pasang**: buka situs di Chrome Android, lalu ketuk **Pasang** pada banner di atas halaman, atau menu Chrome > **Instal aplikasi**. Aplikasi terbuka layar penuh tanpa bilah alamat. Tekan lama ikonnya untuk pintasan **Buat suara** dan **Hasil suara**.
+- **Offline**: cangkang aplikasi tersimpan, jadi aplikasi tetap terbuka tanpa sinyal. Membuat suara dan memutar hasil tetap butuh internet.
+- **Pembaruan**: versi baru diunduh di latar belakang. Banner **Versi baru tersedia** muncul, lalu ketuk **Perbarui**. Aplikasi tidak memuat ulang sendiri agar teks atau rekaman yang sedang dikerjakan tidak hilang.
+- **Privasi**: service worker tidak pernah menyentuh `/api/*` (passcode, audio, data job). Hanya berkas aplikasi (HTML dan aset build) yang di-cache.
+
+Cara kerja build (`npm run build` di `web/`): setelah `vite build`, `scripts/build-pwa.mjs` membuat ikon PNG (192 dan 512, `any` dan `maskable`) dari `pwa/mascot.png.b64`, lalu menulis `dist/sw.js` dari `pwa/sw.template.js` dengan daftar precache dan versi (hash isi) hasil build. Build gagal bila manifest, ikon, atau aset hilang. Manifest dan header ada di `web/public/` (`manifest.webmanifest`, `_headers`); halaman offline di `web/pwa/offline.html`.
+
+```bash
+cd web && npm run test:pwa    # uji perilaku service worker (tanpa browser)
+```
+
+Catatan: sumber logo hanya 128 px, jadi ikon 512 px sedikit lembut. Untuk hasil lebih tajam, ganti `pwa/mascot.png.b64` dengan PNG maskot beresolusi lebih tinggi (format 8-bit RGBA atau palet, tanpa interlace).
+
 ## Secret yang harus diisi
 
 **GitHub Secrets** (repo > Settings > Secrets and variables > Actions):
