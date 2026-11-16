@@ -11,21 +11,30 @@ UI (React) -> POST /api/jobs -> Worker (Hono): simpan input ke R2, job "queued" 
   -> UI polling GET /api/jobs/:id tiap 4 dtk -> putar / unduh
 ```
 
-- `worker/`: Worker TypeScript (Hono) + Static Assets (SPA di `web/dist`), R2 `BUCKET`, D1 `DB`, Cron harian pembersihan (data > 7 hari).
+- `worker/`: Worker TypeScript (Hono) + Static Assets (SPA di `web/dist`), R2 `BUCKET`, D1 `DB`. Tanpa cron: tidak ada penghapusan otomatis, data hanya terhapus lewat tombol **Hapus** di aplikasi.
 - `web/`: React + Vite + Tailwind, mobile-first, bahasa Indonesia.
 - `scripts/render.py`: render di runner (model dimuat sekali per run, semua job antre diproses berurutan). `scripts/idnorm.py`: normalisasi teks Indonesia (terbilang, Rp, %, satuan, singkatan) dan pemecah potongan.
 - `.github/workflows/`: `render.yml` (dipicu repository_dispatch), `deploy.yml` (push ke main), `benchmark.yml` (uji kecepatan CPU tanpa Worker).
 
 Runner tidak memegang kunci R2: semua lewat endpoint internal Worker (Bearer `JOB_TOKEN`).
 
+## Hapus manual
+
+Tidak ada cron. Hasil render dan unggahan referensi tersimpan di R2/D1 sampai Anda menghapusnya.
+
+- **Hasil suara**: halaman Hasil suara punya tombol **Hapus** di tiap item. Menghapus satu job membuang barisnya di D1, teks input, MP3, WAV, dan referensi yang diunggah khusus untuk job itu (`refs/{jobId}/` dan `jobs/{jobId}/`). Suara tersimpan (`voices/`) tidak pernah ikut terhapus.
+- Job yang masih antre atau berjalan tidak bisa dihapus (HTTP 409), kecuali sudah lebih dari 8 jam (dianggap macet).
+- **Suara tersimpan**: dihapus terpisah lewat tombol **Hapus suara**.
+- Pantau pemakaian R2 dan D1 di dashboard Cloudflare agar tidak melewati kuota gratis.
+
 ## Suara referensi tersimpan (voice library)
 
-Di mode **Clone suara**, audio referensi bisa disimpan permanen sehingga tidak perlu diunggah ulang.
+Di mode **Clone suara**, audio referensi bisa disimpan sehingga tidak perlu diunggah ulang.
 
 - Unggah atau rekam referensi, centang izin, isi nama di "Simpan referensi ini sebagai", lalu klik **Simpan suara**.
 - Lain kali pilih nama itu dari dropdown **Suara tersimpan**. Transkrip yang disimpan ikut terisi otomatis.
 - File disimpan di R2 pada `voices/{id}/ref.{ext}`, metadata di tabel D1 `voices` (migrasi `0002_voices.sql`, otomatis diterapkan oleh `deploy.yml`).
-- Cron retensi hanya membersihkan `refs/{jobId}/` dan `jobs/{jobId}/`, jadi `voices/` **tidak ikut terhapus**. Hapus manual lewat tombol **Hapus suara**.
+- Hanya terhapus lewat tombol **Hapus suara**.
 - Batas: 20 suara (konstanta `MAX_VOICES` di `worker/src/index.ts`), tiap file maks 10 MB.
 - Job yang dibuat dengan suara tersimpan memakai file yang sama (tidak disalin per job). Bila suara dihapus saat job masih antre, job itu gagal.
 
@@ -38,6 +47,7 @@ Endpoint (semua butuh header `x-passcode`):
 | GET | `/api/voices/:id/audio` | putar file referensi |
 | DELETE | `/api/voices/:id` | hapus suara |
 | POST | `/api/jobs` | tambah field `voice_id` (mode clone) untuk memakai suara tersimpan |
+| DELETE | `/api/jobs/:id` | hapus satu hasil suara (job selesai/gagal, atau macet > 8 jam) |
 
 ## Aplikasi Android (PWA)
 
@@ -82,7 +92,7 @@ Urutan: deploy dulu (push ke `main` setelah `CLOUDFLARE_*` terisi), baru isi Wor
 
 - Render CPU jauh lebih lambat dari real-time; lihat hasil `benchmark.yml` untuk RTF terukur. Perkiraan waktu di UI memakai RTF job sebelumnya.
 - Teks maks 1500 karakter, referensi maks 10 MB dan 30 detik, kuota 20 job per hari (hari WIB), satu render berjalan sekaligus.
-- Referensi yang diunggah langsung (tanpa disimpan sebagai suara) dan hasil render tetap dihapus setelah 7 hari. Simpan sebagai suara bila ingin permanen.
+- Tidak ada penghapusan otomatis: hasil render dan referensi yang diunggah langsung (tanpa disimpan sebagai suara) tetap ada di server sampai Anda menekan **Hapus**. Daftar Hasil suara menampilkan 100 pekerjaan terbaru.
 - Lisensi: kode OmniVoice berlisensi Apache-2.0 (metadata paket 0.2.1). Lisensi bobot model dan tokenizer audio belum bisa saya pastikan dari satu sumber resmi; ada sumber pihak ketiga yang menyebut CC-BY-NC untuk bobot dan lisensi terpisah untuk tokenizer. Anggap pemakaian non-komersial sampai dicek langsung di halaman model.
 - Mode clone: pakai hanya suara yang Anda punya izinnya.
 - Data D1 gratis dibagi seluruh akun (batas baca baris harian berlaku untuk semua database di akun yang sama).

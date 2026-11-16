@@ -143,7 +143,7 @@ export default function Overview({
         <StatTile
           label="Total pekerjaan"
           value={val(String(stats.total))}
-          hint={statsUnknown ? undefined : library.length >= 100 ? 'Dibatasi 100 terbaru' : 'Dalam masa penyimpanan'}
+          hint={statsUnknown ? undefined : library.length >= 100 ? 'Dibatasi 100 terbaru' : 'Tersimpan di server'}
           icon={<ListIcon size={18} />}
           loading={statsLoading}
         />

@@ -14,7 +14,7 @@ interface VoicePickerProps {
   onLogout: () => void;
 }
 
-// Daftar suara referensi tersimpan (permanen). Memilih satu suara berarti tidak perlu unggah ulang.
+// Daftar suara referensi tersimpan. Memilih satu suara berarti tidak perlu unggah ulang.
 // Suara baru bisa disimpan dari unggahan/rekaman yang sedang aktif.
 export default function VoicePicker({ selectedId, onSelect, newRef, refText, consent, onLogout }: VoicePickerProps) {
   const [voices, setVoices] = useState<Voice[]>([]);
@@ -115,7 +115,7 @@ export default function VoicePicker({ selectedId, onSelect, newRef, refText, con
             <button type="button" className={BTN_DANGER} onClick={() => void remove()}>Hapus suara</button>
           </div>
           {previewUrl && <audio controls autoPlay src={previewUrl} className="w-full" />}
-          <p className="text-xs text-muted">Tersimpan permanen di server, tidak ikut terhapus masa retensi 7 hari. Tidak perlu unggah ulang.</p>
+          <p className="text-xs text-muted">Tersimpan di server sampai Anda menghapusnya dengan tombol Hapus suara. Tidak perlu unggah ulang.</p>
         </div>
       )}
 
