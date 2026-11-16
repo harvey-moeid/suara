@@ -214,13 +214,19 @@ def render_job(inp: dict, work: Path, ref_wav: Path | None, progress) -> dict:
     for i, chunk in enumerate(chunks):
         t0 = time.time()
         gk = dict(kwargs)
-        if prompt is not None:
-            gk["voice_clone_prompt"] = prompt
-        elif mode == "design":
+        if mode == "design":
+            # Atribut desain (gender/usia/pitch/whisper) harus berlaku di SETIAP potongan.
+            # Sengaja TIDAK beralih ke voice_clone_prompt seperti mode auto: cloning dari
+            # audio sintetis hasil TTS sendiri (bukan rekaman manusia asli) memperkuat
+            # artefak dan membuat karakter suara luntur pada potongan ke-2 dan seterusnya,
+            # sehingga hasil render terdengar makin tidak jelas untuk teks yang panjang.
             gk["instruct"] = instruct
+        elif prompt is not None:
+            gk["voice_clone_prompt"] = prompt
         wav = np.ascontiguousarray(model.generate(text=chunk, language=lang, **gk)[0], dtype=np.float32)
-        # Auto/design: pakai potongan pertama sebagai referensi suara agar konsisten antarpotongan.
-        if prompt is None and total > 1 and i == 0:
+        # Auto: pakai potongan pertama sebagai referensi suara agar konsisten antarpotongan.
+        # (Tidak berlaku untuk design/clone - lihat komentar di atas.)
+        if mode == "auto" and prompt is None and total > 1 and i == 0:
             try:
                 prompt = model.create_voice_clone_prompt(ref_audio=(wav, sr), ref_text=chunk)
             except Exception as e:  # noqa: BLE001
