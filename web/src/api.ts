@@ -23,7 +23,7 @@ export interface AudioLibraryItem extends Job {
   hasAudio: boolean;
 }
 
-// Suara referensi yang disimpan permanen (tidak ikut dibersihkan cron retensi).
+// Suara referensi yang disimpan; hanya terhapus lewat tombol Hapus suara.
 export interface Voice {
   id: string;
   name: string;
@@ -150,6 +150,11 @@ export async function fetchAudio(id: string, fmt: 'mp3' | 'wav'): Promise<string
 export async function listJobs(limit = 50): Promise<AudioLibraryItem[]> {
   const data = await parse<{ items: AudioLibraryItem[] }>(await call(`/api/jobs?limit=${limit}`));
   return data.items;
+}
+
+// Hapus manual satu hasil suara (teks, audio MP3/WAV, dan referensi unggahan job itu).
+export async function deleteJob(id: string): Promise<void> {
+  await parse<{ ok: boolean }>(await call(`/api/jobs/${id}`, { method: 'DELETE' }));
 }
 
 // ---- Suara tersimpan ----
