@@ -13,7 +13,6 @@ type Env = {
   RENDER_EVENT: string;
   MAX_CHARS: string;
   DAILY_QUOTA: string;
-  RETENTION_DAYS: string;
 };
 
 type C = Context<{ Bindings: Env }>;
@@ -58,6 +57,8 @@ const MAX_RESULT_BYTES = 60 * 1024 * 1024;
 // Batas suara tersimpan: menjaga pemakaian R2 free tier (20 x maks 10 MB = maks 200 MB).
 const MAX_VOICES = 20;
 const MAX_VOICE_NAME = 60;
+// Job antre/berjalan lebih lama dari ini dianggap macet dan boleh dihapus manual.
+const STALE_JOB_SEC = 8 * 3600;
 const WIB_MS = 7 * 3600 * 1000;
 const enc = new TextEncoder();
 
@@ -183,7 +184,7 @@ app.get('/api/meta', async (c) => {
 });
 
 // ---- Suara tersimpan (voice library) ----
-// Audio referensi yang disimpan di sini TIDAK ikut dibersihkan cron retensi; hanya terhapus lewat DELETE.
+// Audio referensi yang disimpan di sini hanya terhapus lewat DELETE /api/voices/:id.
 app.get('/api/voices', async (c) => {
   const r = await c.env.DB.prepare('SELECT * FROM voices ORDER BY created_at DESC').all<VoiceRow>();
   return c.json({ items: r.results.map(publicVoice), max: MAX_VOICES });
@@ -320,7 +321,7 @@ app.post('/api/jobs', async (c) => {
 
   const id = crypto.randomUUID();
   try {
-    // Suara tersimpan memakai key voices/..., bukan salinan per job, jadi tidak ikut terhapus cron.
+    // Suara tersimpan memakai key voices/..., bukan salinan per job, jadi tidak ikut terhapus saat job dihapus.
     let refKey: string | null = voice ? voice.key : null;
     if (refFile) {
       refKey = `refs/${id}/ref.${refExt(refFile)}`;
@@ -391,6 +392,27 @@ app.get('/api/jobs/:id', async (c) => {
   const row = await c.env.DB.prepare('SELECT * FROM jobs WHERE id = ?').bind(id).first<JobRow>();
   if (!row) return bad(c, 404, 'Job tidak ditemukan (mungkin sudah dihapus)');
   return c.json(publicJob(row));
+});
+
+// Hapus manual: satu-satunya cara data job dan audio hasil dibersihkan (tidak ada cron).
+// Job yang masih antre/berjalan ditolak, kecuali sudah macet lebih dari STALE_JOB_SEC.
+app.delete('/api/jobs/:id', async (c) => {
+  const id = c.req.param('id');
+  if (!UUID_RE.test(id)) return bad(c, 404, 'Job tidak ditemukan');
+  const row = await c.env.DB.prepare('SELECT * FROM jobs WHERE id = ?').bind(id).first<JobRow>();
+  if (!row) return bad(c, 404, 'Job tidak ditemukan (mungkin sudah dihapus)');
+  const active = row.status === 'queued' || row.status === 'running';
+  if (active && nowSec() - row.created_at < STALE_JOB_SEC) {
+    return bad(c, 409, 'Job masih berjalan. Tunggu sampai selesai, lalu hapus.');
+  }
+  // Hanya refs/{id}/ dan jobs/{id}/. Suara tersimpan (voices/) tidak pernah disentuh.
+  // File R2 dihapus lebih dulu; bila gagal, baris D1 tetap ada sehingga penghapusan bisa diulang.
+  for (const prefix of [`refs/${id}/`, `jobs/${id}/`]) {
+    const l = await c.env.BUCKET.list({ prefix });
+    if (l.objects.length) await c.env.BUCKET.delete(l.objects.map((o) => o.key));
+  }
+  await c.env.DB.prepare('DELETE FROM jobs WHERE id = ?').bind(id).run();
+  return c.json({ ok: true });
 });
 
 app.get('/api/jobs/:id/audio', async (c) => {
@@ -524,33 +546,7 @@ app.notFound((c) => {
   return c.env.ASSETS.fetch(c.req.raw);
 });
 
-// ---- Cron: bersihkan data lama (privasi suara referensi) ----
-// Hanya menyentuh refs/{jobId}/ dan jobs/{jobId}/. Suara tersimpan (voices/) sengaja tidak dihapus.
-async function cleanup(env: Env) {
-  const t = nowSec();
-  const cutoff = t - Number(env.RETENTION_DAYS) * 86400;
-  await env.DB.prepare(
-    "UPDATE jobs SET status = 'failed', error = 'Kedaluwarsa: render tidak selesai', updated_at = ? WHERE status IN ('queued','running') AND created_at < ?",
-  ).bind(t, t - 8 * 3600).run();
-
-  for (let round = 0; round < 20; round++) {
-    const r = await env.DB.prepare('SELECT id FROM jobs WHERE created_at < ? LIMIT 100').bind(cutoff).all<{ id: string }>();
-    const ids = r.results.map((x) => x.id);
-    if (!ids.length) break;
-    for (const id of ids) {
-      for (const prefix of [`refs/${id}/`, `jobs/${id}/`]) {
-        const l = await env.BUCKET.list({ prefix });
-        if (l.objects.length) await env.BUCKET.delete(l.objects.map((o) => o.key));
-      }
-    }
-    await env.DB.prepare(`DELETE FROM jobs WHERE id IN (${ids.map(() => '?').join(',')})`).bind(...ids).run();
-  }
-  await env.DB.prepare('DELETE FROM quota WHERE day < ?').bind(dayKey(cutoff * 1000)).run();
-}
-
+// Tidak ada cron/pembersihan otomatis: data hanya terhapus lewat DELETE /api/jobs/:id dan DELETE /api/voices/:id.
 export default {
   fetch: app.fetch,
-  scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
-    ctx.waitUntil(cleanup(env));
-  },
 };

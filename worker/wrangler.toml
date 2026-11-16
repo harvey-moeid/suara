@@ -20,15 +20,12 @@ database_name = "omnivoice-studio"
 database_id = "b28225bf-c964-47da-985c-2469e0995e81"
 migrations_dir = "migrations"
 
-# Pembersihan harian 20:17 UTC (03:17 WIB): hapus data > RETENTION_DAYS hari.
-[triggers]
-crons = ["17 20 * * *"]
+# Tidak ada cron: data hanya terhapus lewat tombol Hapus di aplikasi (DELETE /api/jobs/:id, DELETE /api/voices/:id).
 
 [vars]
 GITHUB_REPO = "harvey-moeid/suara"
 RENDER_EVENT = "tts-render"
 MAX_CHARS = "1500"
 DAILY_QUOTA = "20"
-RETENTION_DAYS = "7"
 
 # Secret (wrangler secret put / dashboard): APP_PASSCODE, JOB_TOKEN, GITHUB_DISPATCH_TOKEN
