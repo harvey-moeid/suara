@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AuthError, fetchAudio, getJob, submitJob } from './api';
+import { AuthError, deleteJob, fetchAudio, getJob, submitJob } from './api';
 import type { AudioLibraryItem, Job, Meta, Mode, SubmitPayload, Voice } from './api';
 import { errMsg, fmtDur, MODE_LABEL } from './format';
 import type { View } from './nav';
@@ -20,6 +20,11 @@ const PITCH: [string, string][] = [['', 'Bebas'], ['very low pitch', 'Sangat ren
 const MODES: [Mode, string][] = [['auto', 'Otomatis'], ['clone', 'Clone suara'], ['design', 'Desain suara']];
 const CHARS_PER_SEC = 14; // perkiraan kasar bahasa Indonesia
 const STARTUP_SEC = 150; // runner menyala + memuat model (perkiraan)
+const STALE_JOB_SEC = 8 * 3600; // sama dengan Worker: job antre/berjalan selama ini dianggap macet
+
+// Job selesai/gagal boleh dihapus kapan saja; job aktif hanya bila sudah macet.
+const canDelete = (item: AudioLibraryItem): boolean =>
+  item.status === 'done' || item.status === 'failed' || Date.now() / 1000 - item.createdAt >= STALE_JOB_SEC;
 
 interface RefState {
   blob: Blob;
@@ -43,6 +48,7 @@ interface StudioProps {
 // Logika generator tidak diubah dari versi sebelumnya. Perbedaan Phase 1:
 // meta/library kini datang dari props (hook bersama), tab dikendalikan shell, dan kelas visual memakai design tokens.
 // Suara tersimpan: di mode clone, pengguna bisa memilih suara tersimpan (voiceId) alih-alih unggah ulang referensi.
+// Hapus manual: tiap hasil di tab Hasil suara punya tombol Hapus (tidak ada pembersihan otomatis).
 export default function Studio({
   view,
   onNavigate,
@@ -77,6 +83,7 @@ export default function Studio({
   const [job, setJob] = useState<Job | null>(null);
   const [jobErr, setJobErr] = useState('');
   const [mp3Url, setMp3Url] = useState('');
+  const [deletingId, setDeletingId] = useState('');
 
   const lastPayload = useRef<SubmitPayload | null>(null);
   const recRef = useRef<MediaRecorder | null>(null);
@@ -284,6 +291,27 @@ export default function Studio({
     }
   };
 
+  // Hapus manual satu hasil suara dari server (job, audio MP3/WAV, referensi unggahan job itu).
+  const removeItem = async (item: AudioLibraryItem) => {
+    if (!window.confirm('Hapus hasil suara ini secara permanen? Teks, audio MP3/WAV, dan referensi unggahan job ini akan dihapus dari server.')) return;
+    setDeletingId(item.id);
+    onLibraryError('');
+    try {
+      await deleteJob(item.id);
+      if (item.id === activeId) {
+        setActiveId('');
+        setJob(null);
+        setJobErr('');
+      }
+      await refreshLibrary();
+    } catch (e) {
+      if (e instanceof AuthError) onLogout();
+      else onLibraryError(errMsg(e));
+    } finally {
+      setDeletingId('');
+    }
+  };
+
   const pct = job && job.progress.total > 0 ? Math.round((job.progress.done / job.progress.total) * 100) : 0;
   const busy = submitting || (!!job && (job.status === 'queued' || job.status === 'running'));
 
@@ -477,10 +505,17 @@ export default function Studio({
                 ) : (
                   <button type="button" className="mt-3 text-sm text-accent underline" onClick={() => { setJob(null); setJobErr(''); setActiveId(item.id); }}>Lihat progres</button>
                 )}
+                {canDelete(item) && (
+                  <div className="mt-3">
+                    <button type="button" className={BTN_DANGER} disabled={deletingId === item.id} onClick={() => void removeItem(item)}>
+                      {deletingId === item.id ? 'Menghapus...' : 'Hapus'}
+                    </button>
+                  </div>
+                )}
               </li>
             ))}
           </ul>
-          <p className="mt-3 text-xs text-muted">Maksimal 100 pekerjaan terbaru. Data dan file audio hasil di server mengikuti masa retensi 7 hari. Suara referensi yang disimpan (Clone suara) tidak ikut terhapus.</p>
+          <p className="mt-3 text-xs text-muted">Maksimal 100 pekerjaan terbaru. Hasil tersimpan di server sampai Anda menghapusnya dengan tombol Hapus; tidak ada penghapusan otomatis. Suara referensi yang disimpan (Clone suara) dihapus terpisah lewat Hapus suara.</p>
         </section>
       )}
     </div>
