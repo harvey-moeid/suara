@@ -34,13 +34,13 @@ runs:
         echo "rev=$REV" >> "$GITHUB_OUTPUT"
 
     - name: Cache model OmniVoice
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: .hf/hub/models--k2-fsa--OmniVoice
         key: hf-omnivoice-${{ steps.hf.outputs.rev }}
 
     - name: Cache model Whisper (hanya terpakai bila clone tanpa transkrip)
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: .hf/hub/models--openai--whisper-large-v3-turbo
         key: hf-whisper-large-v3-turbo-v1
