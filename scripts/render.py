@@ -23,7 +23,9 @@ import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from idnorm import normalize_text, split_chunks  # noqa: E402
+from idnorm import split_chunks  # noqa: E402
+# normalize_expressive = normalize_text + tag non-verbal OmniVoice ([laughter], dll) dan elipsis tetap utuh.
+from expressive import normalize_expressive  # noqa: E402
 
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 MODEL_ID = "k2-fsa/OmniVoice"
@@ -182,7 +184,7 @@ def render_job(inp: dict, work: Path, ref_wav: Path | None, progress) -> dict:
     if mode == "design" and not instruct:
         raise JobError("Atribut desain suara kosong")
 
-    chunks = split_chunks(normalize_text(text, indonesian=(lang == "id")))
+    chunks = split_chunks(normalize_expressive(text, indonesian=(lang == "id")))
     if not chunks:
         raise JobError("Teks kosong setelah dibersihkan")
     total = len(chunks)

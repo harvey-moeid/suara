@@ -13,7 +13,7 @@ UI (React) -> POST /api/jobs -> Worker (Hono): simpan input ke R2, job "queued" 
 
 - `worker/`: Worker TypeScript (Hono) + Static Assets (SPA di `web/dist`), R2 `BUCKET`, D1 `DB`. Tanpa cron: tidak ada penghapusan otomatis, data hanya terhapus lewat tombol **Hapus** di aplikasi.
 - `web/`: React + Vite + Tailwind, mobile-first, bahasa Indonesia.
-- `scripts/render.py`: render di runner (model dimuat sekali per run, semua job antre diproses berurutan). `scripts/idnorm.py`: normalisasi teks Indonesia (terbilang, Rp, %, satuan, singkatan) dan pemecah potongan.
+- `scripts/render.py`: render di runner (model dimuat sekali per run, semua job antre diproses berurutan). `scripts/idnorm.py`: normalisasi teks Indonesia (terbilang, Rp, %, satuan, singkatan) dan pemecah potongan. `scripts/expressive.py`: pembungkus `idnorm` yang mempertahankan tag non-verbal OmniVoice dan elipsis (lihat [Ekspresi](#ekspresi-tag-non-verbal-dan-jeda)).
 - `.github/workflows/`: `render.yml` (dipicu repository_dispatch), `deploy.yml` (push ke main), `benchmark.yml` (uji kecepatan CPU tanpa Worker).
 
 Runner tidak memegang kunci R2: semua lewat endpoint internal Worker (Bearer `JOB_TOKEN`).
@@ -48,6 +48,17 @@ Endpoint (semua butuh header `x-passcode`):
 | DELETE | `/api/voices/:id` | hapus suara |
 | POST | `/api/jobs` | tambah field `voice_id` (mode clone) untuk memakai suara tersimpan |
 | DELETE | `/api/jobs/:id` | hapus satu hasil suara (job selesai/gagal, atau macet > 8 jam) |
+
+## Ekspresi: tag non-verbal dan jeda
+
+OmniVoice tidak punya parameter intonasi atau emosi untuk mode clone. Intonasi mengikuti gaya audio referensi dan teks, jadi dua hal ini bisa dipakai di dalam teks (berlaku di semua mode):
+
+- **Tag non-verbal**: tulis langsung di teks, mis. `Wah [laughter] lucu sekali.` Tag yang dikenali: `[laughter]`, `[sigh]`, `[sniff]`, `[confirmation-en]`, `[question-en]`, `[question-ah]`, `[question-oh]`, `[question-ei]`, `[question-yi]`, `[surprise-ah]`, `[surprise-oh]`, `[surprise-wa]`, `[surprise-yo]`, `[dissatisfaction-hnn]`. Kurung siku lain tetap dibuang seperti biasa.
+- **Elipsis**: `...` (atau `…`) dipertahankan agar nada menggantung dan jeda terjaga. `..` tetap dipadatkan menjadi satu titik.
+
+Tips agar intonasi lebih hidup di mode clone: pakai referensi 3-10 detik dengan gaya bicara ekspresif, isi transkrip referensi dengan akurat, dan pakai tanda baca yang jelas (koma, titik, `?`, `!`).
+
+Catatan: efek tag dan elipsis pada bahasa Indonesia belum diuji dengan audio; dengarkan hasil render uji. Detail dan cara menambah tag ada di [`docs/ekspresi.md`](docs/ekspresi.md).
 
 ## Aplikasi Android (PWA)
 
@@ -103,4 +114,5 @@ Urutan: deploy dulu (push ke `main` setelah `CLOUDFLARE_*` terisi), baru isi Wor
 cd web && npm install && npm run build      # hasil ke web/dist
 cd ../worker && npm install && npx wrangler dev
 python scripts/test_normalize.py            # uji normalisasi teks
+python scripts/test_expressive.py           # uji tag non-verbal dan elipsis
 ```
