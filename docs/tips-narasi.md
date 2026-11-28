@@ -1,19 +1,23 @@
 # Tips menulis narasi untuk suara
 
 Panduan singkat menulis teks yang enak dibacakan TTS. Aturan teknis diambil dari
-`worker/src/index.ts` dan `scripts/` (lihat juga `docs/ekspresi.md` dan
-`docs/tanda-baca.md`).
+`worker/src/index.ts`, `web/src/Studio.tsx`, dan `scripts/` (lihat juga `docs/ekspresi.md`
+dan `docs/tanda-baca.md`).
 
 ## Batas dan mode
 
 - Teks maksimal 1500 karakter. Tag dan `...` ikut dihitung.
 - Mode: `auto`, `clone`, atau `design`.
-- `clone`: audio referensi maksimal 10 MB, transkrip referensi maksimal 500 karakter,
+- Bahasa di dashboard: Indonesia (`id`), Jawa (`jv`), Melayu (`ms`), Inggris (`en`).
+- `clone`: audio referensi ideal 3 sampai 10 detik. Batas dashboard **30 detik dan 10 MB**
+  (rekaman otomatis berhenti di 15 detik). Transkrip referensi maksimal 500 karakter,
   wajib centang izin memakai suara referensi. Suara tersimpan maksimal 20.
 - `design`: atribut hanya dari daftar berikut, dipisah koma (contoh: `female, young adult, low pitch`):
   `male`, `female`, `child`, `teenager`, `young adult`, `middle-aged`, `elderly`,
   `very low pitch`, `low pitch`, `moderate pitch`, `high pitch`, `very high pitch`, `whisper`.
-- `num_step` hanya 8, 16, atau 32. Kecepatan 0.5 sampai 2. Ada kuota job harian.
+- `num_step` hanya 8 (Draf), 16 (Standar), atau 32 (Terbaik). Ada kuota job harian.
+- Kecepatan: slider dashboard **0.7 sampai 1.3**. Server sendiri menerima 0.5 sampai 2
+  bila dipanggil langsung lewat API.
 
 ## Aturan menulis
 
@@ -44,3 +48,8 @@ Kenapa contoh ini cocok untuk TTS:
 - Variasi jeda: koma, titik, dan `...`.
 - Tag hemat, tepat di momen emosi.
 - Tidak ada simbol yang membingungkan.
+
+## Di dashboard web
+
+Ringkasan tips ini juga tampil sebagai kartu **Tips menulis narasi** (bisa dibuka/tutup) di halaman
+Buat suara: `web/src/ui/NarasiTips.tsx`. Bila aturan di sini berubah, ubah kartu itu juga.
