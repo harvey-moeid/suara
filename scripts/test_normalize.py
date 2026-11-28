@@ -66,4 +66,25 @@ assert all(len(c) >= 100 for c in chunks[:-1]), [len(c) for c in chunks]
 
 run_on = split_chunks("kata " * 200)
 assert all(len(c) <= CHUNK_MAX for c in run_on)
+# Tanda baca koma/titik (lihat docs/tanda-baca.md).
+PUNCT = {
+    "Halo,": "Halo.",                                   # akhir koma diganti titik, bukan ",."
+    "Beli apel; lalu pulang:": "Beli apel; lalu pulang.",
+    'Dia berkata "pergi."': 'Dia berkata "pergi."',     # titik di dalam kutip sudah cukup
+    'Dia bilang "halo"': 'Dia bilang "halo".',
+    "Kata ini , dan itu": "Kata ini, dan itu.",         # spasi sebelum koma dibuang
+    "Aku \u2014 kamu \u2014 dia": "Aku, kamu, dia.",       # tanda pisah jadi koma rapi
+    "Wah,, serius": "Wah, serius.",                     # koma ganda dipadatkan
+    "Ya , , tidak": "Ya, tidak.",
+    "Satu. . Dua": "Satu. Dua.",
+    "Harga Rp5.000,-": "Harga lima ribu rupiah.",       # ",-" hiasan harga tidak dibaca
+    "Versi 1.5.0 rilis": "Versi satu titik lima titik nol rilis.",
+    "Tahun 2024,2025": "Tahun dua ribu dua puluh empat, dua ribu dua puluh lima.",
+    "Berat 3,5 kg": "Berat tiga koma lima kilogram.",   # desimal tetap utuh
+    "Rp 1.500.000": "satu juta lima ratus ribu rupiah.",  # ribuan tetap utuh
+}
+for src, want in PUNCT.items():
+    got = normalize_text(src)
+    assert want in got, (src, got, want)
+
 print("OK:", len(chunks), "potongan, uji normalisasi lulus")
