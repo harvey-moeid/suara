@@ -62,6 +62,9 @@ def _num_words(s: str) -> str:
         parts = s.split(",")
         if len(parts) == 2:
             ip, fp = parts
+            # Dua tahun yang diketik rapat ("2024,2025") adalah daftar, bukan desimal.
+            if _YEAR_RE.fullmatch(ip) and _YEAR_RE.fullmatch(fp):
+                return terbilang(int(ip)) + ", " + terbilang(int(fp))
             ip = ip.replace(".", "")
             return terbilang(int(ip or "0")) + " koma " + _digits(fp)
         if re.fullmatch(r"\d{1,3}(?:,\d{3})+", s):
@@ -69,6 +72,9 @@ def _num_words(s: str) -> str:
         return ", ".join(_num_words(p) for p in parts if p)
     if re.fullmatch(r"\d{1,3}(?:\.\d{3})+", s):
         return terbilang(int(s.replace(".", "")))
+    # Penomoran versi/bagian ("1.5.0"): bukan ribuan karena ada kelompok bukan 3 digit.
+    if re.fullmatch(r"\d+(?:\.\d+){2,}", s):
+        return " titik ".join(terbilang(int(p)) for p in s.split("."))
     if re.fullmatch(r"\d+\.\d{1,2}", s):
         ip, fp = s.split(".")
         return terbilang(int(ip)) + " koma " + _digits(fp)
@@ -76,10 +82,11 @@ def _num_words(s: str) -> str:
 
 
 _NUM = r"\d[\d.,]*\d|\d"
+_YEAR_RE = re.compile(r"(?:19|20)\d{2}")
 
 _URL = re.compile(r"(?:https?://|www\.)\S+", re.I)
 _EMAIL = re.compile(r"\S+@\S+\.\S+")
-_EMOJI = re.compile("[\U0001F000-\U0001FAFF☀-➿⬀-⯿︀-️‍⃣]")
+_EMOJI = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27bf\u2b00-\u2bff\ufe00-\ufe0f\u200d\u20e3]")
 
 _ABBR = {
     "yg": "yang", "dgn": "dengan", "dg": "dengan", "tdk": "tidak", "utk": "untuk", "dlm": "dalam",
@@ -137,11 +144,13 @@ def clean_text(text: str) -> str:
     t = t.translate({0x201C: '"', 0x201D: '"', 0x2018: "'", 0x2019: "'", 0x2013: "-", 0x2014: ", "})
     t = re.sub(r"[*_`~^|<>\[\]{}]", " ", t)
     t = re.sub(r"#(\w)", r"\1", t)
-    t = re.sub(r"[ \t ]+", " ", t)
+    t = re.sub(r"[ \t\xa0]+", " ", t)
     return t
 
 
 def _id_rules(t: str) -> str:
+    # Penulisan harga "Rp5.000,-" / "5000,=": ",-" hanya hiasan, jangan ikut terbaca.
+    t = re.sub(r"(?<=\d),[-=](?=\s|$|[.,;:!?])", "", t)
     t = re.sub(r"(?i)\bkm\s*/\s*jam\b", "kilometer per jam", t)
     t = _TITLE_RE.sub(lambda m: _cap_like(m.group(1), _TITLES[m.group(1).lower()]) + " ", t)
     t = _ABBR_RE.sub(lambda m: _cap_like(m.group(0), _ABBR[m.group(0).lower()]), t)
@@ -187,11 +196,38 @@ def _id_rules(t: str) -> str:
     return t
 
 
+def tidy_punct(t: str) -> str:
+    """Rapikan koma/titik: spasi sebelum tanda, tanda ganda, dan tanda campur.
+
+    Memakai [ \\t] (bukan \\s) supaya batas baris tetap utuh; normalize_text memprosesnya per baris.
+    """
+    t = re.sub(r"[ \t]+([,;:.!?])", r"\1", t)        # "kata , lain" -> "kata, lain"
+    t = re.sub(r"([,;:])(?:[ \t]*[,;:])+", r"\1", t)  # ",," / ", ," -> ","
+    t = re.sub(r"[,;:]+[ \t]*(?=[.!?])", "", t)       # ",." -> "."
+    t = re.sub(r"([.!?])[ \t]+(?=[.!?](?:\s|$))", r"\1", t)  # ". ." -> ".."
+    return t
+
+
+def _end_sentence(line: str) -> str:
+    """Pastikan baris berakhir tanda baca akhir kalimat tanpa menumpuk tanda.
+
+    Penutup (kutip/kurung) dilewati dulu: '"pergi."' sudah lengkap, tidak jadi '"pergi.".'.
+    Akhir ,;: diganti titik ("Halo," -> "Halo."), bukan ditambah di belakangnya.
+    """
+    core = line.rstrip("\"')\u201d\u2019")
+    if core and core[-1] in ".!?":
+        return line
+    if core and core[-1] in ",;:":
+        return core[:-1] + "." + line[len(core):]
+    return line + "."
+
+
 def normalize_text(text: str, indonesian: bool = True) -> str:
     """Teks mentah -> teks siap render (satu baris, tiap kalimat berakhir tanda baca)."""
     t = clean_text(text)
     if indonesian:
         t = _id_rules(t)
+    t = tidy_punct(t)
     t = re.sub(r"\.{2,}", ".", t)
     t = re.sub(r"!{2,}", "!", t)
     t = re.sub(r"\?{2,}", "?", t)
@@ -200,9 +236,7 @@ def normalize_text(text: str, indonesian: bool = True) -> str:
         line = re.sub(r"\s+", " ", line).strip(" -")
         if not re.search(r"\w", line):
             continue
-        if line[-1] not in ".!?":
-            line += "."
-        lines.append(line)
+        lines.append(_end_sentence(line))
     return " ".join(lines)
 
 
