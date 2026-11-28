@@ -6,6 +6,7 @@ import { PAGE_COPY } from './nav';
 import Overview from './pages/Overview';
 import Studio from './Studio';
 import { Button } from './ui/Button';
+import { NarasiTips } from './ui/NarasiTips';
 import { PlusIcon, RefreshIcon } from './ui/icons';
 
 // Root area setelah login: menyediakan shell (sidebar/topbar/bottom nav) dan data bersama.
@@ -61,6 +62,11 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
           onNavigate={go}
           onRefresh={() => void refreshAll()}
         />
+      )}
+      {view === 'create' && (
+        <div className="mb-4">
+          <NarasiTips />
+        </div>
       )}
       {/* Studio tetap ter-mount agar teks, rekaman, dan polling job tidak hilang saat pindah ke Ringkasan. */}
       <div hidden={view === 'overview'}>
